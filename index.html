@@ -5,15 +5,37 @@
 @media(max-width:900px){.side{width:190px}.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.content{padding:18px}}
 @media(max-width:620px){.shell{display:block}.side{width:100%;padding:12px;display:flex;overflow:auto;gap:4px}.brand{padding:8px 12px;min-width:130px}.side small{display:none}.nav{width:auto;white-space:nowrap;padding:9px}.top{padding:0 16px}.content{padding:16px}.cards{gap:9px}.card{padding:13px}.metric{font-size:21px}.heading{align-items:flex-start;flex-direction:column}.formgrid{grid-template-columns:1fr}}
 </style></head><body>
-<div class="shell"><aside class="side"><div class="brand">Distribu<span>Pro</span></div><div><small>Workspace</small><button class="nav active" data-page="dashboard">▦ &nbsp;Dashboard</button><button class="nav" data-page="products">▤ &nbsp;Products & Stock</button><button class="nav" data-page="retailers">♙ &nbsp;Retailers</button><button class="nav" data-page="orders">▣ &nbsp;Sales Orders</button><button class="nav" data-page="invoices">▧ &nbsp;Invoices</button><button class="nav" data-page="suppliers">♧ &nbsp;Suppliers</button><button class="nav" data-page="purchases">▣ &nbsp;Purchases</button><button class="nav" data-page="payments">₹ &nbsp;Payments</button><small>Manage</small><button class="nav" data-page="reports">▥ &nbsp;Reports</button></div></aside>
-<main class="main"><header class="top"><strong id="topTitle">Dashboard</strong><span class="user">Demo workspace · Local data</span></header><div class="content">
+
+<style>
+#loginGate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:#f4f6fa}
+.login-card{width:min(420px,100%);background:#fff;border:1px solid #e7ebf1;border-radius:16px;padding:28px;box-shadow:0 12px 36px #18223012}
+.login-card h1{margin:0 0 6px;font-size:24px}.login-card p{color:#718096;margin:0 0 22px}
+.login-card .field{margin:12px 0}.login-card input{width:100%;padding:12px;border:1px solid #e7ebf1;border-radius:8px}
+.login-card button{width:100%;margin-top:12px}.login-error{color:#c23d3d;font-size:13px;min-height:20px;margin-top:10px}
+#appShell{display:none}.auth-tools{display:flex;align-items:center;gap:12px}.auth-tools button{padding:7px 11px}
+.demo-warning{background:#fff7df;border:1px solid #f1d98a;color:#775b12;border-radius:9px;padding:11px 14px;margin-bottom:16px;font-size:12px}
+</style>
+<div id="loginGate">
+ <div class="login-card">
+  <div class="brand" style="padding:0 0 18px;color:#182230">Distribu<span style="color:#315efb">Pro</span></div>
+  <h1>Sign in</h1><p>Use your assigned distribution business account.</p>
+  <form id="loginForm">
+   <div class="field"><label for="loginEmail">Email address</label><input id="loginEmail" type="email" autocomplete="username" required></div>
+   <div class="field"><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" required></div>
+   <button id="loginButton" type="submit">Sign in</button>
+   <div id="loginError" class="login-error" role="alert"></div>
+  </form>
+ </div>
+</div>
+<div id="appShell"><div class="shell"><aside class="side"><div class="brand">Distribu<span>Pro</span></div><div><small>Workspace</small><button class="nav active" data-page="dashboard">▦ &nbsp;Dashboard</button><button class="nav" data-page="products">▤ &nbsp;Products & Stock</button><button class="nav" data-page="retailers">♙ &nbsp;Retailers</button><button class="nav" data-page="orders">▣ &nbsp;Sales Orders</button><button class="nav" data-page="invoices">▧ &nbsp;Invoices</button><button class="nav" data-page="suppliers">♧ &nbsp;Suppliers</button><button class="nav" data-page="purchases">▣ &nbsp;Purchases</button><button class="nav" data-page="payments">₹ &nbsp;Payments</button><small>Manage</small><button class="nav" data-page="reports">▥ &nbsp;Reports</button></div></aside>
+<main class="main"><header class="top"><strong id="topTitle">Dashboard</strong><div class="auth-tools"><span class="user" id="signedInUser">Signed in</span><button class="secondary" id="logoutButton">Sign out</button></div></header><div class="content">
 <section id="dashboard" class="section active"><div class="heading"><div><h1>Good morning 👋</h1><div class="sub">Here's what's happening in your distribution business.</div></div><button onclick="openOrder()">＋ Create sales order</button></div><div class="cards" id="metrics"></div><div class="grid"><div class="box"><h3>Recent sales orders</h3><div class="tablewrap"><table><thead><tr><th>Order</th><th>Retailer</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody id="recentOrders"></tbody></table></div></div><div class="box"><h3>Stock alerts</h3><div id="stockAlerts"></div></div></div></section>
 <section id="products" class="section"><div class="heading"><div><h1>Products & Stock</h1><div class="sub">Manage your catalogue and inventory levels.</div></div><button onclick="openProduct()">＋ Add product</button></div><div class="box"><div class="toolbar"><input id="productSearch" placeholder="Search products…" oninput="renderProducts()"></div><div class="tablewrap"><table><thead><tr><th>SKU</th><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Action</th></tr></thead><tbody id="productRows"></tbody></table></div></div></section>
 <section id="retailers" class="section"><div class="heading"><div><h1>Retailers</h1><div class="sub">Your customers and delivery destinations.</div></div><button onclick="openRetailer()">＋ Add retailer</button></div><div class="box"><div class="tablewrap"><table><thead><tr><th>Retailer</th><th>Contact</th><th>Phone</th><th>Outstanding</th></tr></thead><tbody id="retailerRows"></tbody></table></div></div></section>
 <section id="orders" class="section"><div class="heading"><div><h1>Sales Orders</h1><div class="sub">Create and track customer orders.</div></div><button onclick="openOrder()">＋ Create sales order</button></div><div class="box"><div class="tablewrap"><table><thead><tr><th>Order</th><th>Retailer</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th></tr></thead><tbody id="orderRows"></tbody></table></div></div></section>
 <section id="invoices" class="section"><div class="heading"><div><h1>Invoices</h1><div class="sub">Print invoices and track payment status.</div></div></div><div class="box"><div class="tablewrap"><table><thead><tr><th>Invoice</th><th>Order</th><th>Retailer</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody id="invoiceRows"></tbody></table></div></div></section>
 <section id="reports" class="section"><div class="heading"><div><h1>Reports</h1><div class="sub">A quick view of sales and inventory performance.</div></div><button class="secondary" onclick="exportCSV()">Export orders CSV</button></div><div class="cards" id="reportMetrics"></div><div class="box"><h3>Inventory valuation</h3><div id="valuation"></div></div></section>
-<p class="note">Demo version: data is saved in this browser only (local storage). It is not yet connected to a cloud database, shared team accounts, GST/e-invoicing, or payment gateway. Avoid entering real customer or financial data until those features are configured.</p>
+<div class="demo-warning"><b>Demo data only:</b> Login is connected to Supabase, but business records are still stored in this browser. Cloud data synchronisation is the next integration stage. Do not enter live business transactions yet.</div><p class="note">Demo version: data is saved in this browser only (local storage). It is not yet connected to a cloud database, shared team accounts, GST/e-invoicing, or payment gateway. Avoid entering real customer or financial data until those features are configured.</p>
 </div></main></div>
 <div class="modal" id="modal"><div class="dialog"><h2 id="modalTitle"></h2><div id="modalBody"></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancel</button><button id="modalSave">Save</button></div></div></div>
 <script>
@@ -62,3 +84,40 @@ const renderBase=render;render=function(){renderBase();renderExtras()};
 
 render();
 </script></body></html>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+const SUPABASE_URL = 'https://pbgfmhctkumddfqzufvf.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_DrMvMDJliK6bvJXO1khUbQ_WF95lZeI';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const gate = document.getElementById('loginGate');
+const app = document.getElementById('appShell');
+const form = document.getElementById('loginForm');
+const errorBox = document.getElementById('loginError');
+const button = document.getElementById('loginButton');
+async function showSession(session) {
+ if (!session) { app.style.display='none'; gate.style.display='flex'; return; }
+ const { data: profile, error } = await supabase.from('profiles').select('full_name,role').eq('id',session.user.id).single();
+ if (error || !profile) {
+   await supabase.auth.signOut();
+   errorBox.textContent='Your account profile is not configured. Please contact the administrator.';
+   app.style.display='none'; gate.style.display='flex'; return;
+ }
+ window.dmsUser = { id:session.user.id, email:session.user.email, fullName:profile.full_name, role:profile.role };
+ document.getElementById('signedInUser').textContent=(profile.full_name || session.user.email)+' · '+profile.role;
+ gate.style.display='none'; app.style.display='block';
+}
+form.addEventListener('submit', async (e)=>{
+ e.preventDefault(); errorBox.textContent=''; button.disabled=true; button.textContent='Signing in…';
+ const email=document.getElementById('loginEmail').value.trim();
+ const password=document.getElementById('loginPassword').value;
+ const {data,error}=await supabase.auth.signInWithPassword({email,password});
+ button.disabled=false; button.textContent='Sign in';
+ if(error){errorBox.textContent=error.message.includes('Email not confirmed')?'This account email is not confirmed. Ask the administrator to check its Supabase authentication settings.':'Sign-in failed. Check the email and password, then try again.';return;}
+ await showSession(data.session);
+});
+document.getElementById('logoutButton').addEventListener('click',async()=>{await supabase.auth.signOut();});
+supabase.auth.onAuthStateChange((_event,session)=>{showSession(session);});
+const {data:{session}}=await supabase.auth.getSession();
+await showSession(session);
+</script>
+</div>
