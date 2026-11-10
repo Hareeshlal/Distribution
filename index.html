@@ -30,7 +30,7 @@ function err(e){alert(e?.message||'Something went wrong. Please try again.')}
 async function log(action,details){const {error}=await supabase.from('activity_logs').insert({user_id:currentUser.id,action,details});if(error)console.warn('Activity log:',error.message)}
 async function loadData(){
  const names=['products','retailers','suppliers','sales_orders','sales_order_items','purchases','payments'];
- const results=await Promise.all(names.map(t=>supabase.from(t).select('*').order('created_at',{ascending:false}).limit(2000)));
+ const results=await Promise.all(names.map(t=>{const q=supabase.from(t).select('*');return (t==='sales_order_items'?q:q.order('created_at',{ascending:false})).limit(2000)}));
  for(let i=0;i<names.length;i++){if(results[i].error)throw results[i].error}
  db.products=results[0].data||[];db.retailers=results[1].data||[];db.suppliers=results[2].data||[];db.orders=results[3].data||[];db.orderItems=results[4].data||[];db.purchases=results[5].data||[];db.payments=results[6].data||[];
  render();
