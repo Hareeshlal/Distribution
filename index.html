@@ -21,8 +21,13 @@
 <section id="reports" class="section"><div class="heading"><div><h1>Reports</h1><div class="sub">Cloud sales and stock summary.</div></div><button class="secondary" onclick="exportOrders()">Export orders CSV</button></div><div class="cards" id="reportMetrics"></div><div class="box"><h3>Inventory valuation</h3><div id="valuation"></div></div></section>
 </div></main></div></div>
 <div class="modal" id="modal"><div class="dialog"><h2 id="modalTitle"></h2><div id="modalBody"></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancel</button><button id="modalSave">Save</button></div></div></div>
-<script type="module">
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+if (!window.supabase || !window.supabase.createClient) {
+  document.getElementById('loginError').textContent = 'Login service could not load. Please refresh the page or try Chrome.';
+  throw new Error('Supabase client library did not load');
+}
+const { createClient } = window.supabase;
 const supabase=createClient('https://pbgfmhctkumddfqzufvf.supabase.co','sb_publishable_DrMvMDJliK6bvJXO1khUbQ_WF95lZeI');
 let currentUser=null,db={products:[],retailers:[],suppliers:[],orders:[],orderItems:[],purchases:[],payments:[]};
 const $=id=>document.getElementById(id), money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2}), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
