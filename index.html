@@ -22,7 +22,7 @@
 </div></main></div></div>
 <div class="modal" id="modal"><div class="dialog"><h2 id="modalTitle"></h2><div id="modalBody"></div><div class="actions"><button class="secondary" onclick="closeModal()">Cancel</button><button id="modalSave">Save</button></div></div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script>
+<script type="module">
 if (!window.supabase || !window.supabase.createClient) {
   document.getElementById('loginError').textContent = 'Login service could not load. Please refresh the page or try Chrome.';
   throw new Error('Supabase client library did not load');
