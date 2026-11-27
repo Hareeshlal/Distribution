@@ -2,7 +2,7 @@
   "name": "Delight Distributors",
   "short_name": "Delight",
   "description": "Distribution management for products, stock, purchases, sales, invoices and payments.",
-  "start_url": "./",
+  "start_url": "./?app=1",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
@@ -11,7 +11,7 @@
   "icons": [
     {
       "src": "./icon.svg",
-      "sizes": "192x192 512x512",
+      "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     }
