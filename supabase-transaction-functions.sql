@@ -166,3 +166,61 @@ on public.activity_logs for select to authenticated using (true);
 create policy "Authenticated users can insert activity logs"
 on public.activity_logs for insert to authenticated with check (user_id=auth.uid() or public.is_admin());
 
+-- Safe deletion helpers used by the DistribuPro edit/delete controls.
+-- Sales order deletion restores quantities to inventory in the same transaction.
+create or replace function public.dms_delete_sales_order(p_order_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_order public.sales_orders%rowtype; v_item record;
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  select * into v_order from public.sales_orders where id=p_order_id for update;
+  if not found then raise exception 'Sales order not found'; end if;
+  for v_item in select product_id, quantity from public.sales_order_items where order_id=p_order_id
+  loop
+    update public.products set stock_quantity=stock_quantity+v_item.quantity where id=v_item.product_id;
+  end loop;
+  delete from public.sales_order_items where order_id=p_order_id;
+  delete from public.sales_orders where id=p_order_id;
+  insert into public.activity_logs(user_id,action,details)
+  values(auth.uid(),'sales_order_deleted',jsonb_build_object('order_id',p_order_id,'order_number',v_order.order_number));
+end;
+$$;
+
+-- Purchase deletion removes received quantities. Reject if stock has since been sold/used.
+create or replace function public.dms_delete_purchase(p_purchase_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_purchase public.purchases%rowtype; v_item record; v_stock integer;
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  select * into v_purchase from public.purchases where id=p_purchase_id for update;
+  if not found then raise exception 'Purchase not found'; end if;
+  for v_item in select product_id, quantity from public.purchase_items where purchase_id=p_purchase_id
+  loop
+    select stock_quantity into v_stock from public.products where id=v_item.product_id for update;
+    if v_stock < v_item.quantity then
+      raise exception 'Cannot delete purchase: stock for product % is below received quantity',v_item.product_id;
+    end if;
+  end loop;
+  for v_item in select product_id, quantity from public.purchase_items where purchase_id=p_purchase_id
+  loop
+    update public.products set stock_quantity=stock_quantity-v_item.quantity where id=v_item.product_id;
+  end loop;
+  delete from public.purchase_items where purchase_id=p_purchase_id;
+  delete from public.purchases where id=p_purchase_id;
+  insert into public.activity_logs(user_id,action,details)
+  values(auth.uid(),'purchase_deleted',jsonb_build_object('purchase_id',p_purchase_id,'purchase_number',v_purchase.purchase_number));
+end;
+$$;
+
+revoke all on function public.dms_delete_sales_order(uuid) from public, anon;
+revoke all on function public.dms_delete_purchase(uuid) from public, anon;
+grant execute on function public.dms_delete_sales_order(uuid) to authenticated;
+grant execute on function public.dms_delete_purchase(uuid) to authenticated;
