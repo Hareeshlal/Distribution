@@ -69,14 +69,38 @@ function sortBatchesByPurchaseDate(batches){
  return [...batches].sort((a,b)=>batchPurchaseDate(a).localeCompare(batchPurchaseDate(b))||String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id||'').localeCompare(String(b.id||'')));
 }
 async function syncProductPricesFromPurchases(){
- // Product unit price is the GST-inclusive cost from the oldest purchase date with stock remaining.
+ // Calculate the current FIFO unit price from purchase records, using Purchase Date and current stock.
+ // Sales consume the oldest purchased units first; the remaining stock therefore determines the active lot.
  const fifoPrice=new Map();
+ for(const product of db.products){
+   const stock=Math.max(0,Number(product.stock_quantity||0));
+   const items=(db.purchaseItems||[]).filter(item=>item.product_id===product.id).map(item=>{
+     const purchase=(db.purchases||[]).find(p=>p.id===item.purchase_id);
+     const date=String(purchase?.purchase_date||purchase?.created_at||'').slice(0,10);
+     const qty=Math.max(0,Number(item.quantity||0));
+     const net=Number(item.unit_cost||0);
+     const rate=Number(purchase?.gst_enabled?purchase?.gst_rate||0:0);
+     const gross=Number((net*(1+rate/100)).toFixed(2));
+     return {date,created:String(purchase?.created_at||''),id:String(item.id||''),qty,gross};
+   }).filter(item=>item.qty>0).sort((a,b)=>a.date.localeCompare(b.date)||a.created.localeCompare(b.created)||a.id.localeCompare(b.id));
+   const totalPurchased=items.reduce((sum,item)=>sum+item.qty,0);
+   if(!items.length||stock<=0)continue;
+   // If stock is lower than total purchases, the difference has been sold/consumed via FIFO.
+   let sold=Math.max(0,totalPurchased-stock);
+   for(const item of items){
+     const consumed=Math.min(item.qty,sold);
+     sold-=consumed;
+     if(item.qty-consumed>0){
+       fifoPrice.set(product.id,Number(item.gross.toFixed(2)));
+       break;
+     }
+   }
+ }
+ // Fallback to purchase batches for opening stock or products without purchase-item history.
  for(const batch of sortBatchesByPurchaseDate(db.batches||[])){
    if(Number(batch.remaining_quantity||0)<=0)continue;
-   const productId=batch.product_id;
-   if(!productId||fifoPrice.has(productId))continue;
-   const price=Number(batch.unit_cost_with_gst||0);
-   if(Number.isFinite(price))fifoPrice.set(productId,Number(price.toFixed(2)));
+   if(!batch.product_id||fifoPrice.has(batch.product_id))continue;
+   fifoPrice.set(batch.product_id,Number(Number(batch.unit_cost_with_gst||0).toFixed(2)));
  }
  for(const product of db.products){
    const price=fifoPrice.get(product.id);
