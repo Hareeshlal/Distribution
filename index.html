@@ -60,7 +60,28 @@ async function loadData(){
  await syncProductPricesFromPurchases();
  render();
 }
-async function syncProductPricesFromPurchases(){const latest=new Map();const ranked=[...db.purchases].sort((a,b)=>{const stamp=x=>String(x.updated_at||x.created_at||x.purchase_date||'');return stamp(b).localeCompare(stamp(a))});for(const pur of ranked){const rate=Number(pur.gst_enabled?pur.gst_rate||0:0);for(const item of db.purchaseItems.filter(x=>x.purchase_id===pur.id)){const productId=item.product_id;if(!productId)continue;const stamp=String(pur.updated_at||item.updated_at||pur.created_at||item.created_at||pur.purchase_date||'');const price=Number((Number(item.unit_cost||0)*(1+rate/100)).toFixed(2));const prev=latest.get(productId);if(!prev||stamp>prev.stamp)latest.set(productId,{price,stamp});}}for(const [productId,entry] of latest){const product=db.products.find(x=>x.id===productId);if(!product||!Number.isFinite(entry.price)||Math.abs(Number(product.purchase_price||0)-entry.price)<0.005)continue;const {error}=await supabase.from('products').update({purchase_price:entry.price}).eq('id',productId);if(error)throw error;product.purchase_price=entry.price;}}
+async function syncProductPricesFromPurchases(){
+ // FIFO display cost: show the GST-inclusive price of the oldest batch that still has units.
+ // As that batch is exhausted by sales, the next remaining batch becomes the displayed unit price.
+ const fifoPrice=new Map();
+ for(const batch of [...(db.batches||[])].sort((a,b)=>{
+   const aa=String(a.received_at||a.created_at||''),bb=String(b.received_at||b.created_at||'');
+   return aa.localeCompare(bb)||String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id||'').localeCompare(String(b.id||''));
+ })){
+   if(Number(batch.remaining_quantity||0)<=0)continue;
+   const productId=batch.product_id;
+   if(!productId||fifoPrice.has(productId))continue;
+   const price=Number(batch.unit_cost_with_gst||0);
+   if(Number.isFinite(price))fifoPrice.set(productId,Number(price.toFixed(2)));
+ }
+ for(const product of db.products){
+   const price=fifoPrice.get(product.id);
+   if(price===undefined||Math.abs(Number(product.purchase_price||0)-price)<0.005)continue;
+   const {error}=await supabase.from('products').update({purchase_price:price}).eq('id',product.id);
+   if(error)throw error;
+   product.purchase_price=price;
+ }
+}
 function retailerDue(id){const r=db.retailers.find(x=>x.id===id);if(!r)return 0;const sales=db.orders.filter(o=>o.retailer_id===id&&o.status!=='Paid').reduce((s,o)=>s+Number(o.total_amount||0),0);const paid=db.payments.filter(p=>p.party_type==='retailer'&&p.retailer_id===id).reduce((s,p)=>s+Number(p.amount||0),0);return Number(r.opening_balance||0)+sales-paid}
 function supplierDue(id){const s=db.suppliers.find(x=>x.id===id);if(!s)return 0;const buys=db.purchases.filter(p=>p.supplier_id===id).reduce((a,p)=>a+Number(p.total_amount||0),0);const paid=db.payments.filter(p=>p.party_type==='supplier'&&p.supplier_id===id).reduce((a,p)=>a+Number(p.amount||0),0);return Number(s.opening_balance||0)+buys-paid}
 function badge(s){return '<span class="pill '+(s==='Pending'?'pending':'')+'">'+esc(s)+'</span>'}
