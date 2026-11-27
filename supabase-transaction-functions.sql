@@ -432,7 +432,7 @@ create policy "Authenticated users view FIFO allocations" on public.sales_order_
 with rows as (
   select pi.id purchase_item_id, pi.purchase_id, pi.product_id, pi.quantity,
          greatest(0,round(pi.unit_cost * (1 + coalesce(p.gst_rate,0)/100),2)) gross_cost,
-         (coalesce(p.purchase_date, p.created_at::date)::timestamp at time zone 'UTC') received_at,
+         ((coalesce(p.purchase_date,p.created_at::date)::timestamp + coalesce(p.created_at::time,time '00:00:00')) at time zone 'UTC') received_at,
          coalesce(sum(pi.quantity) over (
            partition by pi.product_id
            order by coalesce(p.purchase_date,p.created_at::date), p.created_at, pi.id
@@ -613,9 +613,9 @@ begin
   for v_item in select product_id,quantity from public.purchase_items where purchase_id=p_purchase_id loop
     update public.products set stock_quantity=stock_quantity-v_item.quantity where id=v_item.product_id;
   end loop;
+  delete from public.purchase_stock_batches where purchase_id=p_purchase_id;
   delete from public.purchase_items where purchase_id=p_purchase_id;
   delete from public.purchases where id=p_purchase_id;
-  delete from public.purchase_stock_batches where purchase_id=p_purchase_id;
   insert into public.activity_logs(user_id,action,details)
   values(auth.uid(),'purchase_deleted',jsonb_build_object('purchase_id',p_purchase_id,'purchase_number',v_purchase.purchase_number));
 end $$;
@@ -680,3 +680,66 @@ begin
 end $$;
 revoke all on function public.dms_update_purchase_fifo(uuid,uuid,uuid,integer,numeric,numeric,date,text,numeric) from public,anon;
 grant execute on function public.dms_update_purchase_fifo(uuid,uuid,uuid,integer,numeric,numeric,date,text,numeric) to authenticated;
+
+
+
+-- Edit a single-line sales order while restoring and re-consuming FIFO batch allocations.
+create or replace function public.dms_update_sales_order_fifo(
+  p_order_id uuid,p_retailer_id uuid,p_product_id uuid,p_quantity integer,
+  p_unit_price numeric,p_status text,p_order_date date,p_gst_rate numeric
+) returns void language plpgsql security definer set search_path=public
+as $$
+declare v_order public.sales_orders%rowtype; v_old record; v_alloc record; v_stock integer;
+  v_order_item_id uuid; v_take integer; v_remaining integer; v_batch record;
+  v_taxable numeric(12,2); v_gst numeric(12,2); v_total numeric(12,2);
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  if p_quantity is null or p_quantity<1 or p_unit_price is null or p_unit_price<0 then raise exception 'Enter valid quantity and rate'; end if;
+  if p_status not in ('Pending','Paid') then raise exception 'Invalid order status'; end if;
+  if p_gst_rate not in (0,5,12,18,28) then raise exception 'Invalid GST rate'; end if;
+  if not exists(select 1 from public.retailers where id=p_retailer_id) then raise exception 'Retailer not found'; end if;
+  select * into v_order from public.sales_orders where id=p_order_id for update;
+  if not found then raise exception 'Sales order not found'; end if;
+  if (select count(*) from public.sales_order_items where order_id=p_order_id)<>1 then
+    raise exception 'Only single-item orders can be edited at line level';
+  end if;
+  for v_old in select id,product_id,quantity from public.sales_order_items where order_id=p_order_id loop
+    if exists(select 1 from public.sales_order_item_fifo_allocations where sales_order_item_id=v_old.id) then
+      for v_alloc in select batch_id,quantity from public.sales_order_item_fifo_allocations where sales_order_item_id=v_old.id loop
+        update public.purchase_stock_batches set remaining_quantity=least(received_quantity,remaining_quantity+v_alloc.quantity) where id=v_alloc.batch_id;
+      end loop;
+    else
+      insert into public.purchase_stock_batches(product_id,received_quantity,remaining_quantity,unit_cost_with_gst,received_at)
+      select v_old.product_id,v_old.quantity,v_old.quantity,coalesce(p.purchase_price,0),now()
+      from public.products p where p.id=v_old.product_id;
+    end if;
+    update public.products set stock_quantity=stock_quantity+v_old.quantity where id=v_old.product_id;
+  end loop;
+  select stock_quantity into v_stock from public.products where id=p_product_id for update;
+  if not found then raise exception 'Product not found'; end if;
+  if v_stock<p_quantity then raise exception 'Insufficient stock for selected product'; end if;
+  v_taxable:=round(p_unit_price*p_quantity,2); v_gst:=round(v_taxable*p_gst_rate/100,2); v_total:=v_taxable+v_gst;
+  delete from public.sales_order_items where order_id=p_order_id;
+  insert into public.sales_order_items(order_id,product_id,quantity,unit_price,line_total)
+  values(p_order_id,p_product_id,p_quantity,p_unit_price,v_taxable) returning id into v_order_item_id;
+  v_remaining:=p_quantity;
+  for v_batch in select id,remaining_quantity,unit_cost_with_gst from public.purchase_stock_batches
+    where product_id=p_product_id and remaining_quantity>0 order by received_at,created_at,id for update
+  loop
+    exit when v_remaining<=0;
+    v_take:=least(v_remaining,v_batch.remaining_quantity);
+    update public.purchase_stock_batches set remaining_quantity=remaining_quantity-v_take where id=v_batch.id;
+    insert into public.sales_order_item_fifo_allocations(sales_order_item_id,batch_id,quantity,unit_cost_with_gst)
+    values(v_order_item_id,v_batch.id,v_take,v_batch.unit_cost_with_gst);
+    v_remaining:=v_remaining-v_take;
+  end loop;
+  if v_remaining>0 then raise exception 'FIFO batch stock is short; refresh FIFO batches before editing this order'; end if;
+  update public.products set stock_quantity=stock_quantity-p_quantity where id=p_product_id;
+  update public.sales_orders set retailer_id=p_retailer_id,order_date=p_order_date,status=p_status,
+    taxable_amount=v_taxable,gst_enabled=(p_gst_rate>0),gst_rate=p_gst_rate,gst_amount=v_gst,total_amount=v_total
+    where id=p_order_id;
+  insert into public.activity_logs(user_id,action,details)
+  values(auth.uid(),'sales_order_updated',jsonb_build_object('order_id',p_order_id,'fifo',true,'total',v_total));
+end $$;
+revoke all on function public.dms_update_sales_order_fifo(uuid,uuid,uuid,integer,numeric,text,date,numeric) from public,anon;
+grant execute on function public.dms_update_sales_order_fifo(uuid,uuid,uuid,integer,numeric,text,date,numeric) to authenticated;
