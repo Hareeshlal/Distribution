@@ -449,8 +449,7 @@ with rows as (
 insert into public.purchase_stock_batches(product_id,purchase_id,purchase_item_id,received_quantity,remaining_quantity,unit_cost_with_gst,received_at)
 select product_id,purchase_id,purchase_item_id,quantity,rem,gross_cost,received_at
 from remaining
-where rem>0
-and not exists(select 1 from public.purchase_stock_batches b where b.purchase_item_id=remaining.purchase_item_id);
+where not exists(select 1 from public.purchase_stock_batches b where b.purchase_item_id=remaining.purchase_item_id);
 
 -- Preserve any opening/adjusted stock that was not represented by historical purchase lines.
 insert into public.purchase_stock_batches(product_id,received_quantity,remaining_quantity,unit_cost_with_gst,received_at)
