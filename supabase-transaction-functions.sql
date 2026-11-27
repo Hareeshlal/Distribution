@@ -432,7 +432,7 @@ create policy "Authenticated users view FIFO allocations" on public.sales_order_
 with rows as (
   select pi.id purchase_item_id, pi.purchase_id, pi.product_id, pi.quantity,
          greatest(0,round(pi.unit_cost * (1 + coalesce(p.gst_rate,0)/100),2)) gross_cost,
-         ((coalesce(p.purchase_date,p.created_at::date)::timestamp + coalesce(p.created_at::time,time '00:00:00')) at time zone 'UTC') received_at,
+         p.created_at received_at,
          coalesce(sum(pi.quantity) over (
            partition by pi.product_id
            order by coalesce(p.purchase_date,p.created_at::date), p.created_at, pi.id
