@@ -116,9 +116,9 @@ async function syncProductPricesFromPurchases(){
    product.purchase_price=price;
  }
 }
-function retailerDue(id){const r=db.retailers.find(x=>x.id===id);if(!r)return 0;const sales=db.orders.filter(o=>o.retailer_id===id&&o.status!=='Paid').reduce((s,o)=>s+Number(o.total_amount||0),0);const paid=db.payments.filter(p=>p.party_type==='retailer'&&p.retailer_id===id).reduce((s,p)=>s+Number(p.amount||0),0);return Number(r.opening_balance||0)+sales-paid}
+function retailerDue(id){const r=db.retailers.find(x=>x.id===id);if(!r)return 0;const sales=db.orders.filter(o=>o.retailer_id===id).reduce((s,o)=>s+Math.max(0,Number(o.total_amount||0)-Number(o.amount_paid||0)),0);const paid=db.payments.filter(p=>p.party_type==='retailer'&&p.retailer_id===id).reduce((s,p)=>s+Number(p.amount||0),0);return Number(r.opening_balance||0)+sales-paid}
 function supplierDue(id){const s=db.suppliers.find(x=>x.id===id);if(!s)return 0;const buys=db.purchases.filter(p=>p.supplier_id===id).reduce((a,p)=>a+Number(p.total_amount||0),0);const paid=db.payments.filter(p=>p.party_type==='supplier'&&p.supplier_id===id).reduce((a,p)=>a+Number(p.amount||0),0);return Number(s.opening_balance||0)+buys-paid}
-function badge(s){return '<span class="pill '+(s==='Pending'?'pending':'')+'">'+esc(s)+'</span>'}
+function badge(s){return '<span class="pill '+(['Completed','Paid'].includes(s)?'':'pending')+'">'+esc(s)+'</span>'}
 window.renderSupplierReport=function(){
  const select=$('supplierReportSelect');if(!select)return;
  const selected=select.value;
