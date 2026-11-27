@@ -224,3 +224,71 @@ revoke all on function public.dms_delete_sales_order(uuid) from public, anon;
 revoke all on function public.dms_delete_purchase(uuid) from public, anon;
 grant execute on function public.dms_delete_sales_order(uuid) to authenticated;
 grant execute on function public.dms_delete_purchase(uuid) to authenticated;
+
+-- Update a sales order's single line item, retailer, date, or payment status atomically.
+create or replace function public.dms_update_sales_order(
+  p_order_id uuid,p_retailer_id uuid,p_product_id uuid,p_quantity integer,
+  p_status text,p_order_date date
+) returns void
+language plpgsql
+security definer
+set search_path=public
+as $$
+declare v_order public.sales_orders%rowtype; v_old record; v_stock integer; v_price numeric(12,2); v_total numeric(12,2);
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  if p_quantity is null or p_quantity<1 then raise exception 'Quantity must be at least 1'; end if;
+  if p_status not in ('Pending','Paid') then raise exception 'Invalid order status'; end if;
+  if not exists(select 1 from public.retailers where id=p_retailer_id) then raise exception 'Retailer not found'; end if;
+  select * into v_order from public.sales_orders where id=p_order_id for update;
+  if not found then raise exception 'Sales order not found'; end if;
+  for v_old in select product_id,quantity from public.sales_order_items where order_id=p_order_id
+  loop update public.products set stock_quantity=stock_quantity+v_old.quantity where id=v_old.product_id; end loop;
+  select stock_quantity,selling_price into v_stock,v_price from public.products where id=p_product_id for update;
+  if not found then raise exception 'Product not found'; end if;
+  if v_stock<p_quantity then raise exception 'Insufficient stock for selected product'; end if;
+  v_total:=v_price*p_quantity;
+  delete from public.sales_order_items where order_id=p_order_id;
+  insert into public.sales_order_items(order_id,product_id,quantity,unit_price,line_total)
+  values(p_order_id,p_product_id,p_quantity,v_price,v_total);
+  update public.products set stock_quantity=stock_quantity-p_quantity where id=p_product_id;
+  update public.sales_orders set retailer_id=p_retailer_id,order_date=p_order_date,status=p_status,total_amount=v_total where id=p_order_id;
+  insert into public.activity_logs(user_id,action,details) values(auth.uid(),'sales_order_updated',jsonb_build_object('order_id',p_order_id,'total',v_total));
+end;
+$$;
+
+-- Update a purchase's single line item and stock impact atomically.
+create or replace function public.dms_update_purchase(
+  p_purchase_id uuid,p_supplier_id uuid,p_product_id uuid,p_quantity integer,
+  p_unit_cost numeric,p_purchase_date date,p_reference_number text
+) returns void
+language plpgsql
+security definer
+set search_path=public
+as $$
+declare v_purchase public.purchases%rowtype; v_old record; v_stock integer; v_total numeric(12,2);
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  if p_quantity is null or p_quantity<1 or p_unit_cost is null or p_unit_cost<0 then raise exception 'Enter a valid quantity and unit cost'; end if;
+  if not exists(select 1 from public.suppliers where id=p_supplier_id) then raise exception 'Supplier not found'; end if;
+  select * into v_purchase from public.purchases where id=p_purchase_id for update;
+  if not found then raise exception 'Purchase not found'; end if;
+  for v_old in select product_id,quantity from public.purchase_items where purchase_id=p_purchase_id
+  loop update public.products set stock_quantity=stock_quantity-v_old.quantity where id=v_old.product_id; end loop;
+  select stock_quantity into v_stock from public.products where id=p_product_id for update;
+  if not found then raise exception 'Product not found'; end if;
+  if v_stock<0 then raise exception 'Cannot edit purchase: previous received stock has already been used'; end if;
+  v_total:=p_quantity*p_unit_cost;
+  delete from public.purchase_items where purchase_id=p_purchase_id;
+  insert into public.purchase_items(purchase_id,product_id,quantity,unit_cost,line_total)
+  values(p_purchase_id,p_product_id,p_quantity,p_unit_cost,v_total);
+  update public.products set stock_quantity=stock_quantity+p_quantity where id=p_product_id;
+  update public.purchases set supplier_id=p_supplier_id,purchase_date=p_purchase_date,reference_number=p_reference_number,total_amount=v_total where id=p_purchase_id;
+  insert into public.activity_logs(user_id,action,details) values(auth.uid(),'purchase_updated',jsonb_build_object('purchase_id',p_purchase_id,'total',v_total));
+end;
+$$;
+
+revoke all on function public.dms_update_sales_order(uuid,uuid,uuid,integer,text,date) from public,anon;
+revoke all on function public.dms_update_purchase(uuid,uuid,uuid,integer,numeric,date,text) from public,anon;
+grant execute on function public.dms_update_sales_order(uuid,uuid,uuid,integer,text,date) to authenticated;
+grant execute on function public.dms_update_purchase(uuid,uuid,uuid,integer,numeric,date,text) to authenticated;
