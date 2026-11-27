@@ -628,3 +628,55 @@ grant execute on function public.dms_create_sales_order(uuid,jsonb,text,date,boo
 grant execute on function public.dms_create_purchase(uuid,jsonb,date,text,boolean,numeric) to authenticated;
 grant execute on function public.dms_delete_sales_order(uuid) to authenticated;
 grant execute on function public.dms_delete_purchase(uuid) to authenticated;
+
+
+
+-- Edit a single-line purchase without breaking FIFO batch balances.
+create or replace function public.dms_update_purchase_fifo(
+  p_purchase_id uuid,p_supplier_id uuid,p_product_id uuid,p_quantity integer,
+  p_unit_cost numeric,p_unit_price_with_gst numeric,p_purchase_date date,
+  p_reference_number text,p_gst_rate numeric
+) returns void language plpgsql security definer set search_path=public
+as $$
+declare v_purchase public.purchases%rowtype; v_old_item public.purchase_items%rowtype;
+  v_batch public.purchase_stock_batches%rowtype; v_old_product uuid; v_old_qty integer;
+  v_taxable numeric(12,2); v_gst numeric(12,2); v_total numeric(12,2);
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  if p_quantity is null or p_quantity<1 or p_unit_cost is null or p_unit_cost<0
+     or p_unit_price_with_gst is null or p_unit_price_with_gst<0 then
+    raise exception 'Enter valid quantity and unit prices';
+  end if;
+  if p_gst_rate not in (0,5,12,18,28) then raise exception 'Invalid GST rate'; end if;
+  select * into v_purchase from public.purchases where id=p_purchase_id for update;
+  if not found then raise exception 'Purchase not found'; end if;
+  select * into v_old_item from public.purchase_items where purchase_id=p_purchase_id;
+  if not found or (select count(*) from public.purchase_items where purchase_id=p_purchase_id)<>1 then
+    raise exception 'Only single-item purchases can be edited at line level';
+  end if;
+  v_old_product:=v_old_item.product_id; v_old_qty:=v_old_item.quantity;
+  select * into v_batch from public.purchase_stock_batches where purchase_item_id=v_old_item.id for update;
+  if not found then raise exception 'FIFO batch missing for this purchase; run the FIFO migration/backfill again'; end if;
+  if v_batch.remaining_quantity<v_batch.received_quantity then
+    raise exception 'Cannot edit this purchase because some units from its FIFO batch have already been sold';
+  end if;
+  if p_product_id is distinct from v_old_product then
+    update public.products set stock_quantity=stock_quantity-v_old_qty where id=v_old_product;
+    update public.products set stock_quantity=stock_quantity+p_quantity,purchase_price=p_unit_price_with_gst where id=p_product_id;
+  else
+    update public.products set stock_quantity=stock_quantity+(p_quantity-v_old_qty),purchase_price=p_unit_price_with_gst where id=p_product_id;
+  end if;
+  update public.purchase_items set product_id=p_product_id,quantity=p_quantity,unit_cost=p_unit_cost,line_total=p_quantity*p_unit_cost where id=v_old_item.id;
+  update public.purchase_stock_batches set product_id=p_product_id,received_quantity=p_quantity,remaining_quantity=p_quantity,
+    unit_cost_with_gst=round(p_unit_price_with_gst,2),received_at=(p_purchase_date::timestamp at time zone 'UTC')
+    where id=v_batch.id;
+  v_taxable:=round(p_quantity*p_unit_cost,2); v_gst:=round(v_taxable*p_gst_rate/100,2); v_total:=v_taxable+v_gst;
+  update public.purchases set supplier_id=p_supplier_id,purchase_date=p_purchase_date,
+    reference_number=p_reference_number,gst_enabled=(p_gst_rate>0),gst_rate=p_gst_rate,
+    taxable_amount=v_taxable,gst_amount=v_gst,total_amount=v_total,updated_at=now()
+    where id=p_purchase_id;
+  insert into public.activity_logs(user_id,action,details)
+  values(auth.uid(),'purchase_updated',jsonb_build_object('purchase_id',p_purchase_id,'fifo',true,'total',v_total));
+end $$;
+revoke all on function public.dms_update_purchase_fifo(uuid,uuid,uuid,integer,numeric,numeric,date,text,numeric) from public,anon;
+grant execute on function public.dms_update_purchase_fifo(uuid,uuid,uuid,integer,numeric,numeric,date,text,numeric) to authenticated;
