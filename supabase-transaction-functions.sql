@@ -296,3 +296,103 @@ revoke all on function public.dms_update_sales_order(uuid,uuid,uuid,integer,text
 revoke all on function public.dms_update_purchase(uuid,uuid,uuid,integer,numeric,date,text) from public,anon;
 grant execute on function public.dms_update_sales_order(uuid,uuid,uuid,integer,text,date) to authenticated;
 grant execute on function public.dms_update_purchase(uuid,uuid,uuid,integer,numeric,date,text) to authenticated;
+
+
+-- Delight Distributors GST support: taxable value, GST rate/amount, and inclusive grand total.
+alter table public.sales_orders
+  add column if not exists gst_enabled boolean not null default false,
+  add column if not exists gst_rate numeric(5,2) not null default 0,
+  add column if not exists taxable_amount numeric(12,2) not null default 0,
+  add column if not exists gst_amount numeric(12,2) not null default 0;
+alter table public.purchases
+  add column if not exists gst_enabled boolean not null default false,
+  add column if not exists gst_rate numeric(5,2) not null default 0,
+  add column if not exists taxable_amount numeric(12,2) not null default 0,
+  add column if not exists gst_amount numeric(12,2) not null default 0;
+
+update public.sales_orders set taxable_amount=total_amount where taxable_amount=0 and total_amount<>0;
+update public.purchases set taxable_amount=total_amount where taxable_amount=0 and total_amount<>0;
+
+create or replace function public.dms_create_sales_order(
+  p_retailer_id uuid,p_items jsonb,p_status text default 'Pending',
+  p_order_date date default current_date,p_gst_enabled boolean default false,
+  p_gst_rate numeric default 0
+) returns uuid
+language plpgsql security definer set search_path=public
+as $$
+declare
+  v_order_id uuid; v_order_no text; v_taxable numeric(12,2):=0;
+  v_gst numeric(12,2):=0; v_total numeric(12,2):=0; v_item jsonb;
+  v_product_id uuid; v_qty integer; v_price numeric(12,2); v_stock integer; v_line numeric(12,2);
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  if p_status not in ('Pending','Paid') then raise exception 'Invalid order status'; end if;
+  if not exists(select 1 from public.retailers where id=p_retailer_id) then raise exception 'Retailer not found'; end if;
+  if p_gst_rate not in (0,5,12,18,28) then raise exception 'GST rate must be 0, 5, 12, 18 or 28'; end if;
+  if not p_gst_enabled then p_gst_rate:=0; end if;
+  if jsonb_typeof(p_items)<>'array' or jsonb_array_length(p_items)=0 then raise exception 'Add at least one order item'; end if;
+  for v_item in select value from jsonb_array_elements(p_items) loop
+    v_product_id:=(v_item->>'product_id')::uuid; v_qty:=(v_item->>'quantity')::integer;
+    if v_qty is null or v_qty<1 then raise exception 'Invalid item quantity'; end if;
+    select stock_quantity,selling_price into v_stock,v_price from public.products where id=v_product_id for update;
+    if not found then raise exception 'Product not found'; end if;
+    if v_stock<v_qty then raise exception 'Insufficient stock for product %',v_product_id; end if;
+    v_taxable:=v_taxable+(v_price*v_qty);
+  end loop;
+  v_gst:=round(v_taxable*p_gst_rate/100,2); v_total:=v_taxable+v_gst;
+  v_order_no:='SO-'||to_char(clock_timestamp(),'YYYYMMDD-HH24MISSMS');
+  insert into public.sales_orders(order_number,retailer_id,order_date,status,total_amount,taxable_amount,gst_enabled,gst_rate,gst_amount,created_by)
+  values(v_order_no,p_retailer_id,p_order_date,p_status,v_total,v_taxable,p_gst_enabled,p_gst_rate,v_gst,auth.uid())
+  returning id into v_order_id;
+  for v_item in select value from jsonb_array_elements(p_items) loop
+    v_product_id:=(v_item->>'product_id')::uuid; v_qty:=(v_item->>'quantity')::integer;
+    select selling_price into v_price from public.products where id=v_product_id;
+    v_line:=v_price*v_qty;
+    insert into public.sales_order_items(order_id,product_id,quantity,unit_price,line_total) values(v_order_id,v_product_id,v_qty,v_price,v_line);
+    update public.products set stock_quantity=stock_quantity-v_qty where id=v_product_id;
+  end loop;
+  insert into public.activity_logs(user_id,action,details) values(auth.uid(),'sales_order_created',jsonb_build_object('order_id',v_order_id,'order_number',v_order_no,'taxable',v_taxable,'gst',v_gst,'total',v_total));
+  return v_order_id;
+end $$;
+
+create or replace function public.dms_create_purchase(
+  p_supplier_id uuid,p_items jsonb,p_purchase_date date default current_date,
+  p_reference_number text default null,p_gst_enabled boolean default false,
+  p_gst_rate numeric default 0
+) returns uuid
+language plpgsql security definer set search_path=public
+as $$
+declare
+  v_purchase_id uuid; v_purchase_no text; v_taxable numeric(12,2):=0;
+  v_gst numeric(12,2):=0; v_total numeric(12,2):=0; v_item jsonb;
+  v_product_id uuid; v_qty integer; v_cost numeric(12,2);
+begin
+  if auth.uid() is null then raise exception 'Authentication required'; end if;
+  if not exists(select 1 from public.suppliers where id=p_supplier_id) then raise exception 'Supplier not found'; end if;
+  if p_gst_rate not in (0,5,12,18,28) then raise exception 'GST rate must be 0, 5, 12, 18 or 28'; end if;
+  if not p_gst_enabled then p_gst_rate:=0; end if;
+  if jsonb_typeof(p_items)<>'array' or jsonb_array_length(p_items)=0 then raise exception 'Add at least one purchase item'; end if;
+  for v_item in select value from jsonb_array_elements(p_items) loop
+    v_product_id:=(v_item->>'product_id')::uuid; v_qty:=(v_item->>'quantity')::integer; v_cost:=(v_item->>'unit_cost')::numeric;
+    if v_qty is null or v_qty<1 or v_cost is null or v_cost<0 then raise exception 'Invalid purchase item'; end if;
+    if not exists(select 1 from public.products where id=v_product_id) then raise exception 'Product not found'; end if;
+    v_taxable:=v_taxable+(v_cost*v_qty);
+  end loop;
+  v_gst:=round(v_taxable*p_gst_rate/100,2); v_total:=v_taxable+v_gst;
+  v_purchase_no:='PO-'||to_char(clock_timestamp(),'YYYYMMDD-HH24MISSMS');
+  insert into public.purchases(purchase_number,supplier_id,purchase_date,reference_number,total_amount,taxable_amount,gst_enabled,gst_rate,gst_amount,created_by)
+  values(v_purchase_no,p_supplier_id,p_purchase_date,p_reference_number,v_total,v_taxable,p_gst_enabled,p_gst_rate,v_gst,auth.uid())
+  returning id into v_purchase_id;
+  for v_item in select value from jsonb_array_elements(p_items) loop
+    v_product_id:=(v_item->>'product_id')::uuid; v_qty:=(v_item->>'quantity')::integer; v_cost:=(v_item->>'unit_cost')::numeric;
+    insert into public.purchase_items(purchase_id,product_id,quantity,unit_cost,line_total) values(v_purchase_id,v_product_id,v_qty,v_cost,v_cost*v_qty);
+    update public.products set stock_quantity=stock_quantity+v_qty where id=v_product_id;
+  end loop;
+  insert into public.activity_logs(user_id,action,details) values(auth.uid(),'purchase_created',jsonb_build_object('purchase_id',v_purchase_id,'purchase_number',v_purchase_no,'taxable',v_taxable,'gst',v_gst,'total',v_total));
+  return v_purchase_id;
+end $$;
+
+revoke all on function public.dms_create_sales_order(uuid,jsonb,text,date,boolean,numeric) from public,anon;
+revoke all on function public.dms_create_purchase(uuid,jsonb,date,text,boolean,numeric) from public,anon;
+grant execute on function public.dms_create_sales_order(uuid,jsonb,text,date,boolean,numeric) to authenticated;
+grant execute on function public.dms_create_purchase(uuid,jsonb,date,text,boolean,numeric) to authenticated;
