@@ -421,6 +421,7 @@ create index if not exists sales_order_fifo_allocations_item_idx
 
 alter table public.purchase_stock_batches enable row level security;
 alter table public.sales_order_item_fifo_allocations enable row level security;
+grant select on public.purchase_stock_batches, public.sales_order_item_fifo_allocations to authenticated;
 drop policy if exists "Authenticated users view purchase stock batches" on public.purchase_stock_batches;
 create policy "Authenticated users view purchase stock batches" on public.purchase_stock_batches
   for select to authenticated using (true);
