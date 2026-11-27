@@ -60,14 +60,17 @@ async function loadData(){
  await syncProductPricesFromPurchases();
  render();
 }
+function batchPurchaseDate(batch){
+ const purchase=(db.purchases||[]).find(p=>p.id===batch.purchase_id);
+ return String(purchase?.purchase_date||batch.received_at||batch.created_at||'').slice(0,10);
+}
+function sortBatchesByPurchaseDate(batches){
+ return [...batches].sort((a,b)=>batchPurchaseDate(a).localeCompare(batchPurchaseDate(b))||String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id||'').localeCompare(String(b.id||'')));
+}
 async function syncProductPricesFromPurchases(){
- // FIFO display cost: show the GST-inclusive price of the oldest batch that still has units.
- // As that batch is exhausted by sales, the next remaining batch becomes the displayed unit price.
+ // Product unit price is the GST-inclusive cost from the oldest purchase date with stock remaining.
  const fifoPrice=new Map();
- for(const batch of [...(db.batches||[])].sort((a,b)=>{
-   const aa=String(a.received_at||a.created_at||''),bb=String(b.received_at||b.created_at||'');
-   return aa.localeCompare(bb)||String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id||'').localeCompare(String(b.id||''));
- })){
+ for(const batch of sortBatchesByPurchaseDate(db.batches||[])){
    if(Number(batch.remaining_quantity||0)<=0)continue;
    const productId=batch.product_id;
    if(!productId||fifoPrice.has(productId))continue;
@@ -101,7 +104,7 @@ function render(){
  $('reportMetrics').innerHTML=[['Sales value',money(sales)],['Retailers',db.retailers.length],['Products',db.products.length],['Stock units',units]].map(x=>'<div class="card"><div class="label">'+x[0]+'</div><div class="metric">'+x[1]+'</div></div>').join('');
  $('valuation').textContent=money(db.batches.length?db.batches.reduce((a,b)=>a+Number(b.remaining_quantity||0)*Number(b.unit_cost_with_gst||0),0):db.products.reduce((a,p)=>a+Number(p.purchase_price||0)*Number(p.stock_quantity||0),0))+' FIFO stock value including GST.';
 }
-function fifoUnitPrice(productId){const batch=db.batches.filter(b=>b.product_id===productId&&Number(b.remaining_quantity)>0).sort((a,b)=>String(a.received_at||a.created_at).localeCompare(String(b.received_at||b.created_at)))[0];return batch?Number(batch.unit_cost_with_gst||0):Number(db.products.find(p=>p.id===productId)?.purchase_price||0)}
+function fifoUnitPrice(productId){const batch=sortBatchesByPurchaseDate((db.batches||[]).filter(b=>b.product_id===productId&&Number(b.remaining_quantity)>0))[0];return batch?Number(batch.unit_cost_with_gst||0):Number(db.products.find(p=>p.id===productId)?.purchase_price||0)}
 function renderProducts(){const q=($('productSearch')?.value||'').toLowerCase(),pid=($('productIdFilter')?.value||'').trim().toLowerCase();$('productRows').innerHTML=db.products.filter(p=>(p.name+p.sku+p.category).toLowerCase().includes(q)&&String(p.sku||'').toLowerCase().includes(pid)).map(p=>'<tr><td>'+esc(p.sku)+'</td><td><b>'+esc(p.name)+'</b></td><td>'+esc(p.category)+'</td><td>'+Number(p.units_per_sku||1)+'</td><td>'+money(fifoUnitPrice(p.id))+'</td><td>'+p.stock_quantity+(Number(p.stock_quantity)<=Number(p.reorder_level)?' <span class="pill low">Low</span>':'')+'</td><td><button class="secondary" onclick="adjustStock(&quot;'+p.id+'&quot;)">Stock</button> <button class="secondary" onclick="editProduct(&quot;'+p.id+'&quot;)">Edit</button> <button class="danger" onclick="deleteSimple(&quot;products&quot;,&quot;'+p.id+'&quot;)">Delete</button></td></tr>').join('')||'<tr><td colspan="7" class="empty">No products found.</td></tr>'}
 function show(title,body,fn){$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modal').classList.add('show');$('modalSave').onclick=async()=>{const b=$('modalSave');b.disabled=true;try{await fn()}catch(e){err(e)}finally{b.disabled=false}}}
 window.closeModal=()=> $('modal').classList.remove('show');
