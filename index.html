@@ -213,10 +213,15 @@ window.shareInvoicePDF=async function(id){
  if(o.offline_pending)return alert('This invoice is still pending sync. Connect to internet and sync it first.');
  if(!navigator.share||!navigator.canShare)return alert('PDF sharing is not supported by this browser. Use Print instead.');
  let frame;
+ const loadScript=(src,ready)=>new Promise((resolve,reject)=>{
+  if(ready())return resolve();
+  const existing=[...document.scripts].find(x=>x.src===src);
+  if(existing){existing.addEventListener('load',resolve,{once:true});existing.addEventListener('error',()=>reject(new Error('Could not load PDF library. Check your internet connection.')),{once:true});return}
+  const el=document.createElement('script');el.src=src;el.onload=resolve;el.onerror=()=>reject(new Error('Could not load PDF library. Check your internet connection.'));document.head.appendChild(el);
+ });
  try{
-  if(!window.html2pdf){
-   await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';s.onload=resolve;s.onerror=()=>reject(new Error('Could not load PDF generator. Connect to internet and try again.'));document.head.appendChild(s)});
-  }
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',()=>typeof window.html2canvas==='function');
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',()=>typeof window.jspdf?.jsPDF==='function');
   const html=buildInvoiceHTML(id);if(!html)return;
   frame=document.createElement('iframe');frame.setAttribute('aria-hidden','true');
   frame.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;visibility:visible;opacity:1;pointer-events:none';
@@ -225,8 +230,7 @@ window.shareInvoicePDF=async function(id){
   const doc=frame.contentDocument,sheet=doc.querySelector('.invoice-sheet');if(!sheet)throw new Error('Invoice layout could not be prepared.');
   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   const canvas=await window.html2canvas(sheet,{scale:2,useCORS:true,backgroundColor:'#ffffff',width:794,windowWidth:794,scrollX:0,scrollY:0});
-  const {jsPDF}=window.jspdf||{};if(!jsPDF)throw new Error('PDF generator unavailable. Please try again.');
-  const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
+  const jsPDF=window.jspdf.jsPDF,pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
   const pageW=210,pageH=297,margin=10,maxW=pageW-2*margin,maxH=pageH-2*margin;
   const ratio=Math.min(maxW/canvas.width,maxH/canvas.height),imgW=canvas.width*ratio,imgH=canvas.height*ratio;
   pdf.addImage(canvas.toDataURL('image/jpeg',0.96),'JPEG',(pageW-imgW)/2,(pageH-imgH)/2,imgW,imgH,undefined,'FAST');
