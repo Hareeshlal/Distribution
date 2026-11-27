@@ -1,0 +1,19 @@
+{
+  "name": "Delight Distributors",
+  "short_name": "Delight",
+  "description": "Distribution management for products, stock, purchases, sales, invoices and payments.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6fa",
+  "theme_color": "#111d35",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
