@@ -15,7 +15,10 @@ END,
 amount_paid = CASE
   WHEN status = 'Paid' THEN COALESCE(total_amount, 0)
   ELSE COALESCE(amount_paid, 0)
-END;
+END
+WHERE payment_status = 'Credit'
+  AND amount_paid = 0
+  AND status IN ('Paid', 'Pending', 'Partially paid');
 
 DO $$
 BEGIN
