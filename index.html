@@ -219,19 +219,18 @@ window.shareInvoicePDF=async function(id){
   }
   const html=buildInvoiceHTML(id);if(!html)return;
   frame=document.createElement('iframe');frame.setAttribute('aria-hidden','true');
-  frame.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;visibility:hidden';
+  frame.style.cssText='position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;visibility:visible;opacity:1;pointer-events:none';
   document.body.appendChild(frame);
   await new Promise((resolve,reject)=>{frame.onload=resolve;frame.onerror=()=>reject(new Error('Could not prepare invoice layout.'));frame.srcdoc=html});
-  const sheet=frame.contentDocument.querySelector('.invoice-sheet');if(!sheet)throw new Error('Invoice layout could not be prepared.');
-  const safe=String(o.order_number||'invoice').replace(/[^a-z0-9_-]/gi,'_');
-  const blob=await window.html2pdf().set({
-   margin:0,filename:'Invoice-'+safe+'.pdf',
-   image:{type:'jpeg',quality:0.98},
-   html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',windowWidth:794,windowHeight:1123,scrollX:0,scrollY:0},
-   jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},
-   pagebreak:{mode:[]}
-  }).from(sheet).toPdf().outputPdf('blob');
-  const file=new File([blob],'Invoice-'+safe+'.pdf',{type:'application/pdf'});
+  const doc=frame.contentDocument,sheet=doc.querySelector('.invoice-sheet');if(!sheet)throw new Error('Invoice layout could not be prepared.');
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  const canvas=await window.html2canvas(sheet,{scale:2,useCORS:true,backgroundColor:'#ffffff',width:794,windowWidth:794,scrollX:0,scrollY:0});
+  const {jsPDF}=window.jspdf||{};if(!jsPDF)throw new Error('PDF generator unavailable. Please try again.');
+  const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4',compress:true});
+  const pageW=210,pageH=297,margin=10,maxW=pageW-2*margin,maxH=pageH-2*margin;
+  const ratio=Math.min(maxW/canvas.width,maxH/canvas.height),imgW=canvas.width*ratio,imgH=canvas.height*ratio;
+  pdf.addImage(canvas.toDataURL('image/jpeg',0.96),'JPEG',(pageW-imgW)/2,(pageH-imgH)/2,imgW,imgH,undefined,'FAST');
+  const safe=String(o.order_number||'invoice').replace(/[^a-z0-9_-]/gi,'_'),blob=pdf.output('blob'),file=new File([blob],'Invoice-'+safe+'.pdf',{type:'application/pdf'});
   if(!navigator.canShare({files:[file]}))return alert('Your browser cannot share PDF files. Use Print instead.');
   await navigator.share({files:[file],title:'Invoice '+String(o.order_number||''),text:'Invoice from Delight Distributors'});
  }catch(e){if(e?.name==='AbortError')return;alert(e?.message||'Could not create/share the invoice PDF. Please try Print.')}
