@@ -274,7 +274,11 @@ begin
   select * into v_purchase from public.purchases where id=p_purchase_id for update;
   if not found then raise exception 'Purchase not found'; end if;
   for v_old in select product_id,quantity from public.purchase_items where purchase_id=p_purchase_id
-  loop update public.products set stock_quantity=stock_quantity-v_old.quantity where id=v_old.product_id; end loop;
+  loop
+    select stock_quantity into v_stock from public.products where id=v_old.product_id for update;
+    if v_stock<v_old.quantity then raise exception 'Cannot edit purchase: received stock for product % has already been used',v_old.product_id; end if;
+    update public.products set stock_quantity=stock_quantity-v_old.quantity where id=v_old.product_id;
+  end loop;
   select stock_quantity into v_stock from public.products where id=p_product_id for update;
   if not found then raise exception 'Product not found'; end if;
   if v_stock<0 then raise exception 'Cannot edit purchase: previous received stock has already been used'; end if;
