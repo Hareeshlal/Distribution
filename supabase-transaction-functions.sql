@@ -396,3 +396,8 @@ revoke all on function public.dms_create_sales_order(uuid,jsonb,text,date,boolea
 revoke all on function public.dms_create_purchase(uuid,jsonb,date,text,boolean,numeric) from public,anon;
 grant execute on function public.dms_create_sales_order(uuid,jsonb,text,date,boolean,numeric) to authenticated;
 grant execute on function public.dms_create_purchase(uuid,jsonb,date,text,boolean,numeric) to authenticated;
+
+
+-- GSTIN fields for retailer and supplier master records
+ALTER TABLE public.retailers ADD COLUMN IF NOT EXISTS gst_number varchar(15);
+ALTER TABLE public.suppliers ADD COLUMN IF NOT EXISTS gst_number varchar(15);
