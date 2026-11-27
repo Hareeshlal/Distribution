@@ -759,3 +759,11 @@ begin
 end $$;
 revoke all on function public.dms_update_sales_order_fifo(uuid,uuid,uuid,integer,numeric,text,date,numeric) from public,anon;
 grant execute on function public.dms_update_sales_order_fifo(uuid,uuid,uuid,integer,numeric,text,date,numeric) to authenticated;
+
+
+-- Ensure purchase edits can update their audit timestamp.
+alter table public.purchases
+  add column if not exists updated_at timestamptz not null default now();
+
+-- Refresh PostgREST's function and column schema cache after applying this file.
+notify pgrst, 'reload schema';
