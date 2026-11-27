@@ -386,3 +386,9 @@ grant execute on function public.dms_create_purchase(uuid,jsonb,date,text,boolea
 -- GSTIN fields for retailer and supplier master records
 ALTER TABLE public.retailers ADD COLUMN IF NOT EXISTS gst_number varchar(15);
 ALTER TABLE public.suppliers ADD COLUMN IF NOT EXISTS gst_number varchar(15);
+
+
+-- Product pack size: number of individual items contained in one SKU/box
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS units_per_sku integer NOT NULL DEFAULT 1;
+ALTER TABLE public.products DROP CONSTRAINT IF EXISTS products_units_per_sku_positive;
+ALTER TABLE public.products ADD CONSTRAINT products_units_per_sku_positive CHECK (units_per_sku >= 1);
