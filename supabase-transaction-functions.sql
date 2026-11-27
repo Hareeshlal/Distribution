@@ -767,3 +767,35 @@ alter table public.purchases
 
 -- Refresh PostgREST's function and column schema cache after applying this file.
 notify pgrst, 'reload schema';
+
+
+-- Repair missing FIFO batches for historical purchase lines (safe to rerun).
+-- Run this block in Supabase SQL Editor if purchase editing reports a missing batch.
+with rows as (
+  select pi.id purchase_item_id, pi.purchase_id, pi.product_id, pi.quantity,
+         round(pi.unit_cost * (1 + coalesce(p.gst_rate,0)/100),2) gross_cost,
+         (coalesce(p.purchase_date,p.created_at::date)::timestamp at time zone 'UTC') received_at,
+         coalesce(sum(pi.quantity) over (
+           partition by pi.product_id
+           order by coalesce(p.purchase_date,p.created_at::date),p.created_at,pi.id
+           rows between unbounded preceding and 1 preceding),0) prior_qty,
+         sum(pi.quantity) over (partition by pi.product_id) total_purchased,
+         pr.stock_quantity
+  from public.purchase_items pi
+  join public.purchases p on p.id=pi.purchase_id
+  join public.products pr on pr.id=pi.product_id
+), remaining as (
+  select *,
+    greatest(0,quantity-greatest(0,least(quantity,(total_purchased-stock_quantity)-prior_qty))) remaining_qty
+  from rows
+)
+insert into public.purchase_stock_batches(
+  product_id,purchase_id,purchase_item_id,received_quantity,remaining_quantity,
+  unit_cost_with_gst,received_at
+)
+select product_id,purchase_id,purchase_item_id,quantity,remaining_qty,gross_cost,received_at
+from remaining r
+where not exists (
+  select 1 from public.purchase_stock_batches b
+  where b.purchase_item_id=r.purchase_item_id
+);
