@@ -9,7 +9,7 @@
 <div id="appShell" class="hidden"><div class="shell"><aside class="side"><div class="brand">Delight Distributors<button type="button" id="drawerClose" class="drawer-close">✕ Close</button></div>
 <button class="nav active" data-page="dashboard">▦ Dashboard</button><button class="nav" data-page="products">▤ Products & Stock</button><button class="nav" data-page="retailers">♙ Retailers</button><button class="nav" data-page="orders">▣ Sales Orders</button><button class="nav" data-page="invoices">▧ Invoices</button><button class="nav" data-page="suppliers">♧ Suppliers</button><button class="nav" data-page="purchases">▣ Purchases</button><button class="nav" data-page="payments">₹ Payments</button><button class="nav" data-page="reports">▥ Reports</button>
 </aside><main class="main"><header class="top"><span class="mobile-brand" style="display:inline-block;font-size:20px;font-weight:800;white-space:nowrap">Delight Distributors</span><button type="button" class="menu-toggle secondary" style="display:inline-flex;align-items:center;gap:7px;flex-shrink:0" id="menuToggle" aria-label="Open navigation menu" aria-expanded="false">☰ Menu</button><strong id="topTitle">Dashboard</strong><div class="auth-tools"><span id="signedInUser" class="user"></span><button class="secondary" id="logoutButton">Sign out</button></div></header><div class="content">
-<div class="notice">Cloud-connected workspace. Changes are saved to Supabase and shared between authorised users.</div>
+<div class="notice">Cloud-connected workspace. Changes are saved to Supabase and shared between authorised users.</div><div id="fifoNotice" class="notice hidden"></div>
 <section id="dashboard" class="section active"><div class="heading"><div><h1>Business dashboard</h1><div class="sub">Live summary from your cloud database.</div></div><button onclick="openOrder()">＋ Create sales order</button></div><div class="cards" id="metrics"></div><h3 style="margin:18px 0 10px">Today\’s business</h3><div class="cards" id="todayMetrics"></div><div class="grid"><div class="box"><h3>Recent sales orders</h3><div class="tablewrap"><table><thead><tr><th>Order</th><th>Retailer</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody id="recentOrders"></tbody></table></div></div><div class="box"><h3>Stock alerts</h3><div id="stockAlerts"></div></div></div></section>
 <section id="products" class="section"><div class="heading"><div><h1>Products & Stock</h1><div class="sub">Cloud inventory and reorder levels.</div></div><button onclick="openProduct()">＋ Add product</button></div><div class="box"><div class="toolbar"><input id="productSearch" placeholder="Search product name/category…" oninput="renderProducts()"><input id="productIdFilter" placeholder="Filter by Product ID…" oninput="renderProducts()"></div><div class="tablewrap"><table><thead><tr><th>Product ID</th><th>Product</th><th>Category</th><th>Units/box</th><th>Unit price incl. GST (₹)</th><th>Stock (units)</th><th>Actions</th></tr></thead><tbody id="productRows"></tbody></table></div></div></section>
 <section id="retailers" class="section"><div class="heading"><div><h1>Retailers</h1><div class="sub">Customers and outstanding balances.</div></div><button onclick="openRetailer()">＋ Add retailer</button></div><div class="box"><div class="tablewrap"><table><thead><tr><th>Retailer</th><th>Contact</th><th>Phone</th><th>GST number</th><th>Outstanding</th><th>Actions</th></tr></thead><tbody id="retailerRows"></tbody></table></div></div></section>
@@ -56,8 +56,14 @@ async function loadData(){
  for(let i=0;i<names.length;i++){if(results[i].error)throw results[i].error}
  db.products=results[0].data||[];db.retailers=results[1].data||[];db.suppliers=results[2].data||[];db.orders=results[3].data||[];db.orderItems=results[4].data||[];db.purchases=results[5].data||[];db.payments=results[6].data||[];db.purchaseItems=results[7].data||[];
  const batchResult=await supabase.from('purchase_stock_batches').select('*').order('received_at',{ascending:true});
- if(batchResult.error)throw new Error('Could not load purchase stock batches for automatic FIFO pricing: '+batchResult.error.message);
+ const fifoMissing=!!batchResult.error&&(batchResult.error.code==='42P01'||/purchase_stock_batches.*schema cache|could not find the table/i.test(batchResult.error.message||''));
+ if(batchResult.error&&!fifoMissing)throw batchResult.error;
  db.batches=batchResult.data||[];
+ const fifoNotice=$('fifoNotice');
+ if(fifoNotice){
+   fifoNotice.classList.toggle('hidden',!fifoMissing);
+   fifoNotice.textContent=fifoMissing?'FIFO stock-batch table is missing in Supabase. Product/stock prices can be estimated from purchase history, but FIFO batch tracking for stock inward and sales needs the SQL migration. Open GitHub → supabase-transaction-functions.sql, copy the full script into Supabase SQL Editor and Run once, then refresh this page.':'';
+ }
  await syncProductPricesFromPurchases();
  render();
 }
