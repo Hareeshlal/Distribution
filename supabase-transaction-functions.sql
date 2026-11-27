@@ -683,6 +683,22 @@ grant execute on function public.dms_update_purchase_fifo(uuid,uuid,uuid,integer
 
 
 
+-- Compatibility overload for the purchase editor with GST-inclusive price fields.
+create or replace function public.dms_update_purchase(
+  p_purchase_id uuid,p_supplier_id uuid,p_product_id uuid,p_quantity integer,
+  p_unit_cost numeric,p_unit_price_with_gst numeric,p_purchase_date date,
+  p_reference_number text,p_gst_rate numeric
+) returns void language plpgsql security definer set search_path=public
+as $
+begin
+  perform public.dms_update_purchase_fifo(
+    p_purchase_id,p_supplier_id,p_product_id,p_quantity,p_unit_cost,
+    p_unit_price_with_gst,p_purchase_date,p_reference_number,p_gst_rate
+  );
+end $;
+revoke all on function public.dms_update_purchase(uuid,uuid,uuid,integer,numeric,numeric,date,text,numeric) from public,anon;
+grant execute on function public.dms_update_purchase(uuid,uuid,uuid,integer,numeric,numeric,date,text,numeric) to authenticated;
+
 -- Edit a single-line sales order while restoring and re-consuming FIFO batch allocations.
 create or replace function public.dms_update_sales_order_fifo(
   p_order_id uuid,p_retailer_id uuid,p_product_id uuid,p_quantity integer,
