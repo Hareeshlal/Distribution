@@ -221,7 +221,10 @@ window.openRetailerWhatsApp=function(id){
  const total=Number(o.total_amount||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
  const retailerName=String(r.name||'Retailer').trim();
  const invoiceDate=String(o.order_date||'').slice(0,10);
- const message='Dear '+retailerName+',\n\nInvoice No: '+(o.order_number||'')+'\nDate: '+invoiceDate+'\nAmount: ₹'+total+'\n\nRegards,\nDelight Distributors\n\nThe invoice PDF will be shared separately.';
+ const paid=Number(o.amount_paid??((o.status==='Paid')?o.total_amount:0));
+ const pending=Math.max(0,Number(o.total_amount||0)-paid);
+ const fmtAmount=n=>'₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+ const message='Dear '+retailerName+',\n\nInvoice No: '+(o.order_number||'')+'\nDate: '+invoiceDate+'\nInvoice Amount: ₹'+total+'\nPaid Amount: '+fmtAmount(paid)+'\nPending Amount: '+fmtAmount(pending)+'\n\nRegards,\nDelight Distributors\n\nThe invoice PDF will be shared separately.';
  const url='https://wa.me/'+phone+'?text='+encodeURIComponent(message);
  window.open(url,'_blank','noopener');
 };
