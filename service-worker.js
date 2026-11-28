@@ -1,4 +1,4 @@
-const CACHE='delight-shell-v20';
+const CACHE='delight-shell-v21';
 const SUPABASE_SCRIPT='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
 const SHELL=['./index.html','./manifest.json','./icon.svg'];
 self.addEventListener('install',event=>{
