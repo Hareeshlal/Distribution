@@ -214,7 +214,7 @@ function field(label,id,type){type=type||'text';return '<div class="field"><labe
 window.openRetailerWhatsApp=function(id){
  const o=db.orders.find(x=>x.id===id);if(!o)return alert('Invoice not found.');
  const r=db.retailers.find(x=>x.id===o.retailer_id);if(!r)return alert('Retailer not found.');
- let phone=String(r.phone||'').replace(/\\D/g,'');
+ let phone=String(r.phone||'').replace(/[^0-9]/g,'');
  if(phone.startsWith('0'))phone=phone.slice(1);
  if(phone.length===10)phone='91'+phone;
  if(phone.length!==12||!phone.startsWith('91'))return alert('Please enter a valid 10-digit Indian mobile number in the retailer details.');
