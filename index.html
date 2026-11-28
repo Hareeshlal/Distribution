@@ -194,7 +194,7 @@ function orderCreatorName(order){
 }
 function orderCreatorId(order){
  if(!order?.created_by)return 'Not recorded';
- return AGENT_DIRECTORY[order.created_by]?.agentId||order.created_by;
+ return order.created_by;
 }
 function renderOrderRows(){
  const select=$('orderAgentSort'),mode=select?.value||'date';
