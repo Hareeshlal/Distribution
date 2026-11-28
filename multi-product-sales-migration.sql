@@ -4,7 +4,7 @@ alter table public.sales_order_items
   add column if not exists gst_rate numeric(5,2),
   add column if not exists gst_amount numeric(12,2);
 
-create or replace function public.dms_create_sales_order(
+create or replace function public.dms_create_sales_order_multi_gst(
   p_retailer_id uuid,p_items jsonb,p_status text default 'Pending',
   p_order_date date default current_date,p_gst_enabled boolean default false,
   p_gst_rate numeric default 0
@@ -87,5 +87,5 @@ begin
   return v_order_id;
 end $$;
 
-revoke all on function public.dms_create_sales_order(uuid,jsonb,text,date,boolean,numeric) from public,anon;
-grant execute on function public.dms_create_sales_order(uuid,jsonb,text,date,boolean,numeric) to authenticated;
+revoke all on function public.dms_create_sales_order_multi_gst(uuid,jsonb,text,date,boolean,numeric) from public,anon;
+grant execute on function public.dms_create_sales_order_multi_gst(uuid,jsonb,text,date,boolean,numeric) to authenticated;
