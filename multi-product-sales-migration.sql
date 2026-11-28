@@ -23,6 +23,18 @@ begin
   if p_gst_rate not in (0,5,12,18,28) then raise exception 'GST rate must be 0, 5, 12, 18 or 28'; end if;
   if jsonb_typeof(p_items)<>'array' or jsonb_array_length(p_items)=0 then raise exception 'Add at least one order item'; end if;
 
+  -- Aggregate repeated product rows before checking stock to prevent overselling.
+  for v_item in select jsonb_build_object('product_id',product_id,'quantity',sum(quantity)) from (
+    select (value->>'product_id')::uuid product_id,(value->>'quantity')::integer quantity
+    from jsonb_array_elements(p_items)
+  ) x group by product_id loop
+    v_product_id:=(v_item->>'product_id')::uuid; v_qty:=(v_item->>'quantity')::integer;
+    select stock_quantity into v_stock from public.products where id=v_product_id for update;
+    if not found then raise exception 'Product not found'; end if;
+    if v_qty is null or v_qty<1 then raise exception 'Invalid item quantity'; end if;
+    if v_stock<v_qty then raise exception 'Insufficient stock for product %',v_product_id; end if;
+  end loop;
+
   for v_item in select value from jsonb_array_elements(p_items) loop
     v_product_id:=(v_item->>'product_id')::uuid; v_qty:=(v_item->>'quantity')::integer;
     select stock_quantity,selling_price into v_stock,v_price from public.products where id=v_product_id for update;
