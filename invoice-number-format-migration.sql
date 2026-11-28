@@ -34,10 +34,10 @@ begin
 
   v_route_code := v_route_letters;
 
-  insert into public.invoice_number_sequences(route_code, invoice_date, last_number)
+  insert into public.invoice_number_sequences as seq(route_code, invoice_date, last_number)
   values (v_route_code, new.order_date, 1)
   on conflict (route_code, invoice_date)
-  do update set last_number = public.invoice_number_sequences.last_number + 1
+  do update set last_number = seq.last_number + 1
   returning last_number into v_sequence;
 
   new.order_number := 'INVDD' || v_route_code ||
