@@ -13,7 +13,7 @@
 <section id="dashboard" class="section active"><div class="heading"><div><h1>Business dashboard</h1><div class="sub">Live summary from your cloud database.</div></div><button onclick="openOrder()">＋ Create sales order</button></div><div class="cards" id="metrics"></div><h3 style="margin:18px 0 10px">Today\’s business</h3><div class="cards" id="todayMetrics"></div><div class="grid"><div class="box"><h3>Recent sales orders</h3><div class="tablewrap"><table><thead><tr><th>Order</th><th>Retailer</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody id="recentOrders"></tbody></table></div></div><div class="box"><h3>Stock alerts</h3><div id="stockAlerts"></div></div></div></section>
 <section id="products" class="section"><div class="heading"><div><h1>Products & Stock</h1><div class="sub">Cloud inventory and reorder levels.</div></div><button onclick="openProduct()">＋ Add product</button></div><div class="box"><div class="toolbar"><input id="productSearch" placeholder="Search product name/category…" oninput="renderProducts()"><input id="productIdFilter" placeholder="Filter by Product ID…" oninput="renderProducts()"></div><div class="tablewrap"><table><thead><tr><th>Product ID</th><th>Product</th><th>Category</th><th>Units/box</th><th>Unit price incl. GST (₹)</th><th>Stock (units)</th><th>Boxes remaining</th><th>Actions</th></tr></thead><tbody id="productRows"></tbody></table></div></div></section>
 <section id="retailers" class="section"><div class="heading"><div><h1>Retailers</h1><div class="sub">Customers and outstanding balances.</div></div><button onclick="openRetailer()">＋ Add retailer</button></div><div class="box"><div class="field" style="max-width:420px;margin-bottom:14px"><label for="retailerRouteFilter">Filter by Route / Area</label><select id="retailerRouteFilter" onchange="renderRetailerRows()"><option value="">All routes</option></select></div><div class="tablewrap"><table><thead><tr><th>Retailer</th><th>Contact</th><th>Phone</th><th>GST number</th><th>Route</th><th>Outstanding</th><th>Actions</th></tr></thead><tbody id="retailerRows"></tbody></table></div></div></section>
-<section id="orders" class="section"><div class="heading"><div><h1>Sales Orders</h1><div class="sub">Create orders and deduct inventory.</div></div><button onclick="openOrder()">＋ Create sales order</button></div><div class="box"><div class="toolbar"><div class="field" style="max-width:260px"><label for="orderAgentSort">Sort sales orders</label><select id="orderAgentSort" onchange="renderOrderRows()"><option value="date">Newest first</option><option value="agent">Agent name (A–Z)</option></select></div></div><div class="tablewrap"><table><thead><tr><th>Order</th><th>Created by</th><th>Retailer</th><th>Date</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody id="orderRows"></tbody></table></div></div></section>
+<section id="orders" class="section"><div class="heading"><div><h1>Sales Orders</h1><div class="sub">Create orders and deduct inventory.</div></div><button onclick="openOrder()">＋ Create sales order</button></div><div class="box"><div class="toolbar"><div class="field" style="max-width:260px"><label for="orderAgentSort">Sort sales orders</label><select id="orderAgentSort" onchange="renderOrderRows()"><option value="date">Newest first</option><option value="agent">Agent name (A–Z)</option></select></div></div><div class="tablewrap"><table><thead><tr><th>Order</th><th>Created by</th><th>Agent ID</th><th>Retailer</th><th>Date</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody id="orderRows"></tbody></table></div></div></section>
 <section id="invoices" class="section"><div class="heading"><div><h1>Invoices</h1><div class="sub">Print invoices for sales orders.</div></div></div><div class="box"><div class="tablewrap"><table><thead><tr><th>Invoice</th><th>Order</th><th>Retailer</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody id="invoiceRows"></tbody></table></div></div></section>
 <section id="suppliers" class="section"><div class="heading"><div><h1>Suppliers</h1><div class="sub">Manufacturers and wholesalers.</div></div><button onclick="openSupplier()">＋ Add supplier</button></div><div class="box"><div class="tablewrap"><table><thead><tr><th>Supplier</th><th>Contact</th><th>Phone</th><th>GST number</th><th>Payable</th><th>Actions</th></tr></thead><tbody id="supplierRows"></tbody></table></div></div></section>
 <section id="purchases" class="section"><div class="heading"><div><h1>Purchases & Stock Inward</h1><div class="sub">Record incoming stock from suppliers.</div></div><button onclick="openPurchase()">＋ Record purchase</button></div><div class="box"><div class="tablewrap"><table><thead><tr><th>Purchase</th><th>Supplier</th><th>Date</th><th>Quantity (units)</th><th>Unit price with GST</th><th>Total</th><th>Payment Status</th><th>Pending Amount</th><th>Actions</th></tr></thead><tbody id="purchaseRows"></tbody></table></div></div></section>
@@ -177,13 +177,24 @@ window.renderDailyReport=function(){const el=$('dailyReportDate');if(!el)return;
  }
  db.profiles=profiles;
 }
+const AGENT_DIRECTORY={
+ '258bc88a-d602-43be-af1c-33c8ca59fc50':{name:'Amal Jithu',agentId:'AGENT-01'},
+ 'db5c2015-baeb-4e61-a375-f0f4e2ac2a4d':{name:'Ajith Ambady',agentId:'AGENT-02'},
+ '81cef2ca-2d8c-4648-82c6-9b29462615c7':{name:'Hareesh Lal',agentId:'AGENT-03'},
+ '92f1f612-f02d-4905-a0e0-0b8e5b78a1d4':{name:'Vinukuttan',agentId:'AGENT-04'}
+};
 function orderCreatorName(order){
  if(!order?.created_by)return 'Not recorded';
+ const mapped=AGENT_DIRECTORY[order.created_by];if(mapped)return mapped.name;
  const profile=(db.profiles||[]).find(p=>p.id===order.created_by);
  const name=String(profile?.full_name||'').trim();
- if(name)return name;
- if(order.created_by===currentUser?.id&&currentUser?.full_name)return currentUser.full_name;
+ if(name&&name.toLowerCase()!=='administrator')return name;
+ if(order.created_by===currentUser?.id&&currentUser?.full_name&&currentUser.full_name.toLowerCase()!=='administrator')return currentUser.full_name;
  return 'Unknown user';
+}
+function orderCreatorId(order){
+ if(!order?.created_by)return 'Not recorded';
+ return AGENT_DIRECTORY[order.created_by]?.agentId||order.created_by;
 }
 function renderOrderRows(){
  const select=$('orderAgentSort'),mode=select?.value||'date';
@@ -198,7 +209,7 @@ function renderOrderRows(){
  }else{
   rows.sort((a,b)=>String(b.created_at||b.order_date||'').localeCompare(String(a.created_at||a.order_date||'')));
  }
- $('orderRows').innerHTML=rows.map(o=>'<tr><td>'+esc(o.order_number)+'</td><td>'+esc(orderCreatorName(o))+'</td><td>'+esc(db.retailers.find(r=>r.id===o.retailer_id)?.name||'—')+'</td><td>'+esc(o.order_date)+'</td><td>'+money(o.total_amount)+'</td><td>'+badge(o.payment_status||o.status)+(o.offline_pending?'<div class="muted">Pending sync</div>':'')+' <span class="muted" style="margin-left:8px;font-size:12px;white-space:nowrap">Due: '+money(Math.max(0,Number(o.total_amount||0)-Number(o.amount_paid??((o.status==='Paid')?o.total_amount:0))))+'</span></td><td>'+(o.offline_pending?'<span class="muted">Saved offline</span>':'<button class="secondary" onclick="editOrder(&quot;'+o.id+'&quot;)">Edit</button> <button class="danger" onclick="deleteOrder(&quot;'+o.id+'&quot;)">Delete</button>')+'</td></tr>').join('')||'<tr><td colspan="7" class="empty">No sales orders yet.</td></tr>';
+ $('orderRows').innerHTML=rows.map(o=>'<tr><td>'+esc(o.order_number)+'</td><td>'+esc(orderCreatorName(o))+'</td><td>'+esc(orderCreatorId(o))+'</td><td>'+esc(db.retailers.find(r=>r.id===o.retailer_id)?.name||'—')+'</td><td>'+esc(o.order_date)+'</td><td>'+money(o.total_amount)+'</td><td>'+badge(o.payment_status||o.status)+(o.offline_pending?'<div class="muted">Pending sync</div>':'')+' <span class="muted" style="margin-left:8px;font-size:12px;white-space:nowrap">Due: '+money(Math.max(0,Number(o.total_amount||0)-Number(o.amount_paid??((o.status==='Paid')?o.total_amount:0))))+'</span></td><td>'+(o.offline_pending?'<span class="muted">Saved offline</span>':'<button class="secondary" onclick="editOrder(&quot;'+o.id+'&quot;)">Edit</button> <button class="danger" onclick="deleteOrder(&quot;'+o.id+'&quot;)">Delete</button>')+'</td></tr>').join('')||'<tr><td colspan="8" class="empty">No sales orders yet.</td></tr>';
 }
 function render(){
  const sales=db.orders.reduce((a,o)=>a+Number(o.total_amount||0),0),units=db.products.reduce((a,p)=>a+Number(p.stock_quantity||0),0),out=db.retailers.reduce((a,r)=>a+retailerDue(r.id),0);
