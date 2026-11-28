@@ -219,7 +219,9 @@ window.openRetailerWhatsApp=function(id){
  if(phone.length===10)phone='91'+phone;
  if(phone.length!==12||!phone.startsWith('91'))return alert('Please enter a valid 10-digit Indian mobile number in the retailer details.');
  const total=Number(o.total_amount||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
- const message='Dear '+(r.name||'Retailer')+', invoice '+(o.order_number||'')+' dated '+String(o.order_date||'').slice(0,10)+' for ₹'+total+' from Delight Distributors. Please find the invoice PDF shared separately.';
+ const retailerName=String(r.name||'Retailer').trim();
+ const invoiceDate=String(o.order_date||'').slice(0,10);
+ const message='Dear '+retailerName+',\\n\\nInvoice No: '+(o.order_number||'')+'\\nDate: '+invoiceDate+'\\nAmount: ₹'+total+'\\n\\nRegards,\\nDelight Distributors\\n\\nThe invoice PDF will be shared separately.';
  const url='https://wa.me/'+phone+'?text='+encodeURIComponent(message);
  window.open(url,'_blank','noopener');
 };
